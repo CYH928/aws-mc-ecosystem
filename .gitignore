@@ -1,0 +1,16 @@
+.mcp.json
+*local*
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/terraform.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# SSH keys
+*.pem
+*.key

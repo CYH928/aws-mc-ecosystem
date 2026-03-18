@@ -178,14 +178,4 @@ terraform plan    # always preview first
 terraform apply   # apply changes
 ```
 
-If you modify `user_data` scripts, Terraform will detect the change and offer to **replace** the EC2 instance (destroy + recreate). This means:
-- Watcher: safe to replace (stateless)
-- MC Server: **world data will be lost** unless you restore from S3 backup after recreation
-
-To avoid data loss when updating MC server user_data, add this to `ec2.tf`:
-```hcl
-lifecycle {
-  ignore_changes = [user_data]
-}
-```
-Then make your changes manually via SSH instead.
+If you modify `user_data` scripts, Terraform will detect the change and offer to **replace** the EC2 instance (destroy + recreate). Both instances now have `lifecycle { ignore_changes = [user_data] }` in `ec2.tf`, so Terraform will not replace them due to user_data changes. Make any init script changes manually via SSH instead.

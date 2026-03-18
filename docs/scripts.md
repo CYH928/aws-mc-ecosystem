@@ -20,17 +20,21 @@ Scripts are split into two locations based on purpose:
 
 1. **Installs AWS CLI v2** (ARM64 version for t4g)
 2. **Sets up DuckDNS** — writes an update script to `/opt/duckdns/update.sh` and runs it via cron every 5 minutes. This keeps the DuckDNS subdomain pointing to the Watcher's current public IP.
-3. **Installs mc-hibernation** (ARM64 binary from GitHub releases)
-4. **Writes `/opt/mc-hibernation/start-mc.sh`** — the script mc-hibernation calls when a player connects:
-   - Uses `aws ec2 describe-instances` to find the MC server by its `Name=minecraft-server` tag
-   - Only starts the instance if it's in `stopped` or `stopping` state (avoids double-start)
-   - Calls `aws ec2 wait instance-running` to block until the EC2 is ready
-   - Sleeps 60 seconds to let the MC Java process fully start after OS boot
-5. **Writes `/opt/mc-hibernation/msh-config.json`** — configures mc-hibernation:
-   - `MinecraftServerAddress`: the fixed private IP of the MC server (set at Terraform apply time)
-   - `StartMinecraftServer`: path to start-mc.sh
-   - `TimeBeforeStoppingEmptyServer: 120` — mc-hibernation's own idle timer (backup safety net, in seconds)
-6. **Creates systemd service** `mc-hibernation.service` — starts on boot, restarts on crash
+3. **Installs Python 3 and boto3** (for the custom TCP proxy)
+4. **Writes `/opt/mc-proxy/proxy.py`** — a custom Python TCP proxy that:
+   - Listens on port 25565 for incoming player connections
+   - Checks EC2 state of the MC server via AWS API (boto3)
+   - Starts the MC EC2 if it is in `stopped` state
+   - Waits for the MC server to be running and the game port to be reachable
+   - Shows the player a "Server is starting..." message while waiting
+   - Transparently proxies all TCP traffic to the MC server's fixed private IP once it is online
+5. **Creates systemd service** `mc-proxy.service`:
+   - Runs `/opt/mc-proxy/proxy.py` as a systemd unit
+   - Starts on boot, restarts on crash (`Restart=always`)
+   - Passes configuration via environment variables in the systemd unit file:
+     - `MC_SERVER_IP` — fixed private IP of the MC server
+     - `AWS_REGION` — e.g., `ap-east-1`
+     - `MC_INSTANCE_NAME` — tag name used to find the MC EC2
 
 ### Template variables (injected by Terraform):
 - `${duckdns_token}`, `${duckdns_subdomain}` — DuckDNS credentials
@@ -189,4 +193,4 @@ bash mc_status.sh
 - RAM and CPU usage
 - Disk usage for world data
 - Most recent S3 backup filename and timestamp
-- mc-hibernation service status
+- mc-proxy service status

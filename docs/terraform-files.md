@@ -101,14 +101,16 @@ Both roles use instance profiles so the EC2 machines get credentials automatical
 
 ### Watcher (`aws_instance.watcher`)
 - AMI: Ubuntu 22.04 ARM64 (matches t4g.nano ARM architecture)
-- Uses `watcher_init.sh` as user_data (runs on first boot)
+- Uses `watcher_init.sh` as user_data (runs on first boot to install the Python TCP proxy `mc-proxy`)
 - Never stopped, so its public IP remains stable
+- Has `lifecycle { ignore_changes = [user_data] }` to prevent Terraform from replacing an already-deployed instance
 
 ### MC Server (`aws_instance.minecraft`)
 - AMI: Ubuntu 22.04 x86_64 (standard t3 architecture)
 - `private_ip = local.mc_private_ip` — fixes the private IP
 - 30 GB gp3 EBS root volume, encrypted
 - Uses `mc_init.sh` as user_data (runs on first boot only)
+- Has `lifecycle { ignore_changes = [user_data] }` to prevent Terraform from replacing an already-deployed instance
 
 **Important:** `user_data` runs only on the very first boot. If you need to re-run setup, SSH in and run the script manually.
 

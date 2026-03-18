@@ -8,7 +8,7 @@ RCON_PASSWORD="${rcon_password}"
 MC_DIR=/home/minecraft/server
 
 # Save bucket name so mc_restore.sh can auto-detect it
-echo "${BACKUP_BUCKET}" > /etc/mc-backup-bucket
+echo "$${BACKUP_BUCKET}" > /etc/mc-backup-bucket
 
 # ── System update ──────────────────────────────────────────────────────────
 apt-get update -y
@@ -31,10 +31,10 @@ mkdir -p "$MC_DIR"
 
 # ── Download latest PaperMC build ─────────────────────────────────────────
 cd "$MC_DIR"
-PAPER_BUILD=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/${MC_VERSION}/builds" \
+PAPER_BUILD=$(curl -s "https://api.papermc.io/v2/projects/paper/versions/$${MC_VERSION}/builds" \
   | jq -r '.builds[-1].build')
 curl -sLo server.jar \
-  "https://api.papermc.io/v2/projects/paper/versions/${MC_VERSION}/builds/${PAPER_BUILD}/downloads/paper-${MC_VERSION}-${PAPER_BUILD}.jar"
+  "https://api.papermc.io/v2/projects/paper/versions/$${MC_VERSION}/builds/$${PAPER_BUILD}/downloads/paper-$${MC_VERSION}-$${PAPER_BUILD}.jar"
 
 echo "eula=true" > eula.txt
 
@@ -46,16 +46,18 @@ simulation-distance=6
 difficulty=normal
 online-mode=true
 enable-rcon=true
-rcon.password=${RCON_PASSWORD}
+rcon.password=$${RCON_PASSWORD}
 rcon.port=25575
 motd=Server is up!
 PROPEOF
 
 # ── Download Chunky plugin (pre-generate world) ────────────────────────────
 mkdir -p plugins
-CHUNKY_URL=$(curl -s "https://api.github.com/repos/pop4959/Chunky/releases/latest" \
-  | jq -r '.assets[] | select(.name | endswith(".jar")) | .browser_download_url' | head -1)
-curl -sLo plugins/Chunky.jar "$CHUNKY_URL"
+CHUNKY_URL=$(curl -s "https://api.modrinth.com/v2/project/fALzjamp/version?loaders=%5B%22paper%22%5D" \
+  | jq -r '.[0].files[0].url' || echo "")
+if [ -n "$CHUNKY_URL" ] && [ "$CHUNKY_URL" != "null" ]; then
+  curl -sLo plugins/Chunky.jar "$CHUNKY_URL"
+fi
 
 chown -R minecraft:minecraft "$MC_DIR"
 
@@ -67,13 +69,13 @@ After=network.target
 
 [Service]
 User=minecraft
-WorkingDirectory=${MC_DIR}
+WorkingDirectory=$${MC_DIR}
 ExecStart=/usr/bin/java -Xmx12G -Xms4G \
   -XX:+UseG1GC \
   -XX:+ParallelRefProcEnabled \
   -XX:MaxGCPauseMillis=200 \
   -jar server.jar nogui
-ExecStop=/usr/local/bin/mcrcon -H localhost -P 25575 -p ${RCON_PASSWORD} stop
+ExecStop=/usr/local/bin/mcrcon -H localhost -P 25575 -p $${RCON_PASSWORD} stop
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -106,7 +108,7 @@ if echo "$RESPONSE" | grep -q "There are 0"; then
   COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
   COUNT=$((COUNT + 1))
   echo $COUNT > "$COUNTER_FILE"
-  echo "$(date): No players (${COUNT}/3 checks before shutdown)"
+  echo "$(date): No players ($${COUNT}/3 checks before shutdown)"
 
   if [ "$COUNT" -ge 3 ]; then
     echo "$(date): 15 min empty - stopping instance"
@@ -122,8 +124,8 @@ else
 fi
 STOPEOF
 
-sed -i "s/__RCON_PASSWORD__/${RCON_PASSWORD}/" /usr/local/bin/mc-autostop.sh
-sed -i "s/__AWS_REGION__/${AWS_REGION}/" /usr/local/bin/mc-autostop.sh
+sed -i "s/__RCON_PASSWORD__/$${RCON_PASSWORD}/" /usr/local/bin/mc-autostop.sh
+sed -i "s/__AWS_REGION__/$${AWS_REGION}/" /usr/local/bin/mc-autostop.sh
 chmod +x /usr/local/bin/mc-autostop.sh
 
 # Check every 5 minutes
@@ -133,13 +135,13 @@ chmod +x /usr/local/bin/mc-autostop.sh
 cat > /usr/local/bin/mc-backup.sh << BAKEOF
 #!/bin/bash
 DATE=\$(date +%Y%m%d-%H%M)
-MC_DIR_PATH="${MC_DIR}"
-BUCKET="${BACKUP_BUCKET}"
-REGION="${AWS_REGION}"
+MC_DIR_PATH="$${MC_DIR}"
+BUCKET="$${BACKUP_BUCKET}"
+REGION="$${AWS_REGION}"
 
 # Pause chunk saving to get clean backup
-/usr/local/bin/mcrcon -H localhost -P 25575 -p "${RCON_PASSWORD}" "save-off" 2>/dev/null || true
-/usr/local/bin/mcrcon -H localhost -P 25575 -p "${RCON_PASSWORD}" "save-all" 2>/dev/null || true
+/usr/local/bin/mcrcon -H localhost -P 25575 -p "$${RCON_PASSWORD}" "save-off" 2>/dev/null || true
+/usr/local/bin/mcrcon -H localhost -P 25575 -p "$${RCON_PASSWORD}" "save-all" 2>/dev/null || true
 sleep 5
 
 tar -czf /tmp/mc-backup-\$DATE.tar.gz \
@@ -152,7 +154,7 @@ tar -czf /tmp/mc-backup-\$DATE.tar.gz -C "\$MC_DIR_PATH" world
 
 rm -f /tmp/mc-backup-\$DATE.tar.gz
 
-/usr/local/bin/mcrcon -H localhost -P 25575 -p "${RCON_PASSWORD}" "save-on" 2>/dev/null || true
+/usr/local/bin/mcrcon -H localhost -P 25575 -p "$${RCON_PASSWORD}" "save-on" 2>/dev/null || true
 echo "\$(date): Backup \$DATE uploaded to s3://\$BUCKET"
 BAKEOF
 chmod +x /usr/local/bin/mc-backup.sh

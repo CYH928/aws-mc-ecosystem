@@ -13,8 +13,8 @@ Player connects to mymc.duckdns.org
         │
         ▼
 Watcher machine (always on, ~$3.4/mo)
-  - Detects connection attempt
-  - Boots the Minecraft EC2 via AWS API
+  - Runs Python TCP proxy (mc-proxy) on port 25565
+  - Detects connection, boots MC EC2 via AWS API
   - Proxies game traffic once server is up
         │
         ▼
@@ -176,7 +176,7 @@ terraform plan    # always preview first
 terraform apply
 ```
 
-> **Warning:** Changing `user_data` in `ec2.tf` causes Terraform to replace the EC2 instance (destroy + recreate). This deletes the world data. Ensure you have an S3 backup before applying, or add `lifecycle { ignore_changes = [user_data] }` to the MC instance resource.
+> **Note:** Both EC2 instances now have `lifecycle { ignore_changes = [user_data] }` in `ec2.tf`, so Terraform will not replace them due to user_data changes. Make any init script changes manually via SSH instead.
 
 ---
 

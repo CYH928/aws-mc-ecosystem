@@ -44,6 +44,10 @@ resource "aws_instance" "watcher" {
     mc_version        = var.mc_version
   })
 
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+
   tags = { Name = "minecraft-watcher" }
 }
 
@@ -73,6 +77,10 @@ resource "aws_instance" "minecraft" {
     mc_version    = var.mc_version
     rcon_password = var.rcon_password
   })
+
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 
   tags = { Name = "minecraft-server" }
 }

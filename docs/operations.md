@@ -94,8 +94,8 @@ tail -f /var/log/mc-autostop.log
 # Backup log
 tail -f /var/log/mc-backup.log
 
-# mc-hibernation log (on Watcher)
-sudo journalctl -u mc-hibernation -f
+# mc-proxy log (on Watcher)
+sudo journalctl -u mc-proxy -f
 ```
 
 ---
@@ -225,15 +225,38 @@ cat /opt/duckdns/duck.log  # should show "OK"
 
 ---
 
-## Monitoring mc-hibernation (Watcher)
+## Monitoring mc-proxy (Watcher)
 
 ```bash
 # SSH into Watcher
-sudo systemctl status mc-hibernation
-sudo journalctl -u mc-hibernation -f
+sudo systemctl status mc-proxy
+sudo journalctl -u mc-proxy -f
 ```
 
-If mc-hibernation crashes, it restarts automatically (Restart=always in systemd).
+If mc-proxy crashes, it restarts automatically (Restart=always in systemd).
+
+---
+
+## Pterodactyl Panel
+
+The Pterodactyl Panel provides a web UI for managing the Minecraft server. It runs on the MC server machine (port 8080) and is only accessible when the MC server EC2 is running.
+
+**Access:** `http://<mc_server_public_ip>:8080`
+
+> The MC server's public IP changes every time it stops and starts. Get the current URL via `terraform output pterodactyl_panel_url` or from AWS Console.
+
+```bash
+# Check Panel services (on MC server)
+sudo systemctl status nginx
+sudo systemctl status php8.3-fpm
+sudo systemctl status pteroq
+
+# Check Wings (Docker game server daemon)
+sudo systemctl status wings
+sudo journalctl -u wings -f
+```
+
+For detailed setup and administration, see [docs/pterodactyl-admin-guide.md](pterodactyl-admin-guide.md).
 
 ---
 

@@ -5,29 +5,26 @@
 ## Players Can't Connect
 
 ### "Connection refused" or immediate timeout
-**Cause:** mc-hibernation on the Watcher is not running.
+**Cause:** mc-proxy on the Watcher is not running.
 ```bash
 # SSH into Watcher
-sudo systemctl status mc-hibernation
-sudo systemctl restart mc-hibernation
-sudo journalctl -u mc-hibernation -n 50
+sudo systemctl status mc-proxy
+sudo systemctl restart mc-proxy
+sudo journalctl -u mc-proxy -n 50
 ```
 
 ### "Server is hibernating" but server never starts
-**Cause:** The start-mc.sh script failed to boot the EC2.
+**Cause:** The mc-proxy failed to boot the MC EC2.
 ```bash
 # SSH into Watcher
-sudo journalctl -u mc-hibernation -f
-
-# Test the start script manually:
-sudo bash /opt/mc-hibernation/start-mc.sh
-# Watch for AWS API errors
+sudo journalctl -u mc-proxy -f
+# Watch for AWS API errors in the Python proxy logs
 ```
 
 Common causes:
 - IAM role permissions issue → check `mc-watcher-role` in AWS IAM Console
 - MC server is already starting (not in `stopped` state yet) → wait and retry
-- Wrong AWS region in start-mc.sh → verify `AWS_REGION` in the script
+- Wrong AWS region → verify `AWS_REGION` in the mc-proxy.service environment variables
 
 ### "Can connect to server but can't join" / auth error
 **Cause:** `online-mode=true` requires a legitimate Minecraft account. Player must own the game.

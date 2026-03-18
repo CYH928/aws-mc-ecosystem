@@ -17,7 +17,7 @@ Players
   ▼
 ┌─────────────────────────────┐
 │  Watcher Machine            │  t4g.nano (~$3.4/mo) — ALWAYS ON
-│  - mc-hibernation (proxy)   │
+│  - mc-proxy (Python proxy)  │
 │  - DuckDNS IP updater       │
 │  - IAM: can start MC EC2    │
 └──────────────┬──────────────┘
@@ -48,7 +48,7 @@ CloudWatch  →  billing alarm email when monthly cost > $50
 
 **Problem:** When the MC server EC2 is stopped, nothing is listening on port 25565. Players cannot connect, and there is no trigger to start it.
 
-**Solution:** A tiny always-on Watcher machine runs `mc-hibernation`, a lightweight TCP proxy that:
+**Solution:** A tiny always-on Watcher machine runs `mc-proxy`, a custom Python TCP proxy (`/opt/mc-proxy/proxy.py`) that:
 1. Listens on port 25565 at all times
 2. When a player connects, runs a shell script that boots the MC EC2 via AWS API
 3. Shows the player a "Server is starting..." message while waiting
@@ -67,7 +67,7 @@ CloudWatch  →  billing alarm email when monthly cost > $50
 ## Fixed Private IP
 
 The MC server is assigned a fixed private IP (`cidrhost(subnet_cidr, 100)` in Terraform). This is critical because:
-- `mc-hibernation` needs a stable address to proxy traffic to
+- `mc-proxy` needs a stable address to proxy traffic to
 - Without a fixed private IP, the address would change every time the EC2 stops and restarts
 - No Elastic IP is needed for this — private IPs within a VPC can be fixed at no cost
 
@@ -92,7 +92,7 @@ The MC server is assigned a fixed private IP (`cidrhost(subnet_cidr, 100)` in Te
 | Component | Choice | Reason |
 |---|---|---|
 | Game server | PaperMC | Better performance than vanilla, plugin support |
-| Wake-on-connect | mc-hibernation | Purpose-built tool, widely used in MC community |
+| Wake-on-connect | Custom Python TCP proxy (mc-proxy) | Lightweight, no external dependencies, full control over EC2 start/proxy logic |
 | Dynamic DNS | DuckDNS | Free, reliable, simple API |
 | World pre-generation | Chunky plugin | Eliminates chunk-gen lag when players explore |
 | Admin panel | Pterodactyl | Industry standard for game server management |

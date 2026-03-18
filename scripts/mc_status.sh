@@ -91,13 +91,13 @@ else
   echo "  Bucket not configured (run on MC machine)"
 fi
 
-# ── mc-hibernation (only on Watcher) ──────────────────────────────────────
+# ── mc-proxy (only on Watcher) ────────────────────────────────────────────
 echo ""
-echo "[Watcher Service]"
-if systemctl is-active --quiet mc-hibernation 2>/dev/null; then
-  echo "  mc-hibernation : RUNNING"
+echo "[Watcher Proxy Service]"
+if systemctl is-active --quiet mc-proxy 2>/dev/null; then
+  echo "  mc-proxy : RUNNING"
 else
-  echo "  mc-hibernation : STOPPED (or not on Watcher)"
+  echo "  mc-proxy : STOPPED (or not on Watcher)"
 fi
 
 echo ""
