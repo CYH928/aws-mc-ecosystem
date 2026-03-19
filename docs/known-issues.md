@@ -36,8 +36,10 @@ echo "$${BACKUP_BUCKET}" > /etc/mc-backup-bucket
 
 **解決：** 放棄 mc-hibernation，改用自寫嘅 Python TCP proxy（`/opt/mc-proxy/proxy.py`），功能：
 - 監聽 port 25565
-- 檢查 MC EC2 狀態，如果 stopped 就自動啟動
-- 等待 MC server ready 後代理所有 TCP traffic
+- 驗證 Minecraft 協議 handshake — 拒絕 port scanner 同垃圾連線
+- Server list ping（狀態查詢）→ 回應假 MOTD "Server is sleeping - join to wake up!"，唔啟動 EC2
+- 真玩家 login → 檢查 MC EC2 狀態，如果 stopped 就自動啟動
+- 等待 MC server ready 後 replay handshake 再代理所有 TCP traffic
 - 支援多個同時連線（threading）
 
 **教訓：** 使用第三方工具前要確認：版本號是否存在、binary 命名、config 格式、是否支援遠端代理。

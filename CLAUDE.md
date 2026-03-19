@@ -19,19 +19,31 @@ terraform output        # show server addresses and URLs
 
 Manual scripts are in `scripts/` and must be copied to the server via `scp` before running.
 
+SSH to servers (both use `ubuntu` user):
+```bash
+ssh -i minecraft-java-key.pem ubuntu@$(cd terraform && terraform output -raw watcher_public_ip)
+```
+
+Deploying live changes to Watcher (since `lifecycle { ignore_changes = [user_data] }` prevents Terraform from updating running instances):
+```bash
+scp -i minecraft-java-key.pem <local_file> ubuntu@<watcher_ip>:/opt/<target_path>
+ssh -i minecraft-java-key.pem ubuntu@<watcher_ip> "sudo systemctl restart <service>"
+```
+
 ## Architecture
 
 **Two EC2 machines with distinct roles:**
 
-- **Watcher** (`t4g.nano`, ARM64, always on): runs a custom Python TCP proxy (`mc-proxy`) at `/opt/mc-proxy/proxy.py` on port 25565. When a player connects, it checks EC2 state, starts the MC EC2 if stopped via AWS API, waits for boot, then proxies TCP traffic to the MC server's fixed private IP. Runs as `mc-proxy.service` with environment variables (MC_SERVER_IP, AWS_REGION, etc.) configured in the systemd unit. Also runs DuckDNS updater on cron. Also runs **MC Web Control Panel** (`mc-web-panel.service`) at `/opt/mc-web-panel/app.py` on port 8080 — a Python web UI for Start/Stop EC2, status, player list, and a link to Pterodactyl Panel. Always accessible since the Watcher never stops. Auth via `?token=` query parameter.
+- **Watcher** (`t4g.nano`, ARM64, always on): runs a custom Python TCP proxy (`mc-proxy`) at `/opt/mc-proxy/proxy.py` on port 25565. Validates Minecraft protocol handshakes before acting — port scanners and garbage connections are rejected immediately, server list pings (status) are answered locally with a fake MOTD ("Server is sleeping - join to wake up!") without starting EC2, and only real login attempts trigger EC2 start. Once the MC server is up, proxies TCP traffic to the MC server's fixed private IP. Runs as `mc-proxy.service` with environment variables (MC_SERVER_IP, AWS_REGION, etc.) configured in the systemd unit. Also runs DuckDNS updater on cron. Also runs **MC Web Control Panel** (`mc-web-panel.service`) at `/opt/mc-web-panel/app.py` on port 8080 — a Python web UI for Start/Stop EC2, status, player list, and a link to Pterodactyl Panel. Always accessible since the Watcher never stops. Auth via `?token=` query parameter.
 
 - **MC Server** (`t3.xlarge`, x86_64, on-demand): runs Pterodactyl Panel + Wings which manages PaperMC inside Docker containers. There is no `minecraft.service` — all MC server processes are managed by Pterodactyl/Wings/Docker. World data lives at `/var/lib/pterodactyl/volumes/<uuid>/world/`. Has two cron jobs: auto-stop (checks player count every 1 min, stops EC2 after 3 consecutive empty checks (3 min idle)) and S3 backup (every 1 hour). Backup also runs on boot (via `fix-panel-ip.sh`) and before shutdown (via MC Web Control Panel). Runs **`fix-panel-ip.service`** on every boot (`/opt/fix-panel-ip.sh`) which auto-updates Panel APP_URL, Node FQDN, and Wings CORS to the current public IP, runs a backup, then auto-starts all Pterodactyl servers. This solves the "IP changes on every stop/start" problem.
 
 **Key design decisions:**
 - MC server uses a fixed private IP via `cidrhost(subnet_cidr, 100)` so the Watcher always knows where to proxy, without needing an Elastic IP.
 - CloudWatch billing alarm resources use `provider = aws.us_east_1` alias because billing metrics only exist in us-east-1.
-- `terraform/scripts/` use `templatefile()` variable injection — they are NOT standalone shell scripts. Root `scripts/` are standalone.
+- `terraform/scripts/` use `templatefile()` variable injection — they are NOT standalone shell scripts. Root `scripts/` are standalone. In templatefile scripts, shell variables must be escaped as `$${VAR}` to avoid Terraform interpolation. Python code in `watcher_init.sh` is inside a single-quoted heredoc (`<< 'PYEOF'`) so `${}` in Python is safe, but shell sections outside it are not.
 - `terraform.tfvars` contains secrets (RCON password, DuckDNS token) — never commit it.
+- The mc-proxy `build_status_response()` hardcodes protocol version `770` and version string `"1.21.4"`. When upgrading `mc_version` in `variables.tf`, also update these values in `watcher_init.sh` (and redeploy to the live Watcher).
 
 ## File Layout
 
@@ -41,7 +53,7 @@ Manual scripts are in `scripts/` and must be copied to the server via `scp` befo
 
 ## Important Caveats
 
-- Changing `user_data` in `ec2.tf` causes Terraform to **replace** (destroy+recreate) the EC2 instance, which deletes world data. Add `lifecycle { ignore_changes = [user_data] }` if modifying init scripts after deployment.
+- Both EC2 instances have `lifecycle { ignore_changes = [user_data] }` in `ec2.tf`. Changing `terraform/scripts/` will NOT auto-deploy — you must SSH in and update files manually, then restart the relevant systemd service. Removing this lifecycle block causes Terraform to **replace** (destroy+recreate) the instance, which deletes world data.
 - The S3 bucket has `force_destroy = false` — must empty bucket before `terraform destroy` will succeed.
 - Watcher AMI is ARM64 (for t4g), MC server AMI is x86_64 (for t3) — don't mix them up.
 - All user-facing documentation and conversation should be in **Traditional Chinese (Hong Kong)**.

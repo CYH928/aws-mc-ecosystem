@@ -22,12 +22,11 @@ Scripts are split into two locations based on purpose:
 2. **Sets up DuckDNS** — writes an update script to `/opt/duckdns/update.sh` and runs it via cron every 5 minutes. This keeps the DuckDNS subdomain pointing to the Watcher's current public IP.
 3. **Installs Python 3 and boto3** (for the custom TCP proxy)
 4. **Writes `/opt/mc-proxy/proxy.py`** — a custom Python TCP proxy that:
-   - Listens on port 25565 for incoming player connections
-   - Checks EC2 state of the MC server via AWS API (boto3)
-   - Starts the MC EC2 if it is in `stopped` state
-   - Waits for the MC server to be running and the game port to be reachable
-   - Shows the player a "Server is starting..." message while waiting
-   - Transparently proxies all TCP traffic to the MC server's fixed private IP once it is online
+   - Listens on port 25565 for incoming connections
+   - Validates Minecraft protocol handshake (10s timeout) — rejects port scanners and garbage data
+   - For **status pings** (server list refresh): responds locally with fake MOTD ("Server is sleeping - join to wake up!") and player count 0/8, without touching EC2
+   - For **login attempts** (real player joining): checks EC2 state via AWS API, starts MC EC2 if stopped, waits for server ready, replays the handshake packet, then proxies all TCP traffic
+   - Logs connection types as `[SCANNER]`, `[STATUS]`, or `[LOGIN]` for monitoring
 5. **Creates systemd service** `mc-proxy.service`:
    - Runs `/opt/mc-proxy/proxy.py` as a systemd unit
    - Starts on boot, restarts on crash (`Restart=always`)

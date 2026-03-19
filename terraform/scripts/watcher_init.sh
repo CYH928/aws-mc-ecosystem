@@ -33,10 +33,12 @@ mkdir -p /opt/mc-proxy
 cat > /opt/mc-proxy/proxy.py << 'PYEOF'
 #!/usr/bin/env python3
 """Minecraft TCP Proxy with EC2 Auto-Start
-Listens on 25565. If MC server is stopped, starts it.
-Proxies all traffic to the MC server's fixed private IP.
+Listens on 25565. Validates Minecraft protocol handshake before acting.
+- Port scanners / garbage → rejected immediately
+- Status ping (server list) → responds with fake MOTD, no EC2 start
+- Login (real player) → starts EC2 if needed, then proxies traffic
 """
-import socket, threading, subprocess, time, sys, os
+import socket, threading, subprocess, time, sys, os, struct, json
 
 MC_SERVER_IP = os.environ.get("MC_SERVER_IP", "127.0.0.1")
 MC_SERVER_PORT = int(os.environ.get("MC_SERVER_PORT", "25565"))
@@ -49,6 +51,168 @@ is_starting = False
 
 def log(msg):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+
+# ── Minecraft varint helpers ─────────────────────────────────────────────
+
+def read_varint(sock, max_bytes=5):
+    """Read a Minecraft protocol varint from a socket."""
+    result = 0
+    raw = b""
+    for i in range(max_bytes):
+        byte = sock.recv(1)
+        if not byte:
+            raise ConnectionError("Connection closed during varint")
+        raw += byte
+        b = byte[0]
+        result |= (b & 0x7F) << (7 * i)
+        if not (b & 0x80):
+            break
+    else:
+        raise ValueError("Varint too long")
+    return result, raw
+
+def write_varint(value):
+    """Encode an integer as a Minecraft protocol varint."""
+    buf = b""
+    while True:
+        b = value & 0x7F
+        value >>= 7
+        if value:
+            buf += bytes([b | 0x80])
+        else:
+            buf += bytes([b])
+            break
+    return buf
+
+def make_packet(packet_id, payload):
+    """Build a length-prefixed Minecraft packet."""
+    pid_bytes = write_varint(packet_id)
+    data = pid_bytes + payload
+    return write_varint(len(data)) + data
+
+# ── Minecraft handshake parser ───────────────────────────────────────────
+
+def parse_varint_from_bytes(data, offset):
+    """Parse a varint from a byte buffer at given offset. Returns (value, new_offset)."""
+    result = 0
+    for i in range(5):
+        if offset >= len(data):
+            return None, offset
+        b = data[offset]; offset += 1
+        result |= (b & 0x7F) << (7 * i)
+        if not (b & 0x80):
+            break
+    return result, offset
+
+def parse_handshake(client_sock):
+    """Read and parse a Minecraft handshake packet.
+    Returns dict with next_state + raw_packet, or None if invalid."""
+    client_sock.settimeout(10)
+    try:
+        packet_length, raw_length = read_varint(client_sock)
+        if packet_length < 2 or packet_length > 300:
+            return None
+
+        payload = b""
+        while len(payload) < packet_length:
+            chunk = client_sock.recv(packet_length - len(payload))
+            if not chunk:
+                return None
+            payload += chunk
+
+        raw_packet = raw_length + payload
+        offset = 0
+
+        # Packet ID — must be 0x00
+        packet_id, offset = parse_varint_from_bytes(payload, offset)
+        if packet_id is None or packet_id != 0x00:
+            return None
+
+        # Protocol version
+        protocol_version, offset = parse_varint_from_bytes(payload, offset)
+        if protocol_version is None:
+            return None
+
+        # Server address (varint-prefixed string)
+        addr_len, offset = parse_varint_from_bytes(payload, offset)
+        if addr_len is None or addr_len > 255 or offset + addr_len > len(payload):
+            return None
+        server_address = payload[offset:offset+addr_len].decode("utf-8", errors="replace")
+        offset += addr_len
+
+        # Server port (unsigned short, big-endian)
+        if offset + 2 > len(payload):
+            return None
+        server_port = struct.unpack(">H", payload[offset:offset+2])[0]
+        offset += 2
+
+        # Next state: 1=status, 2=login
+        next_state, offset = parse_varint_from_bytes(payload, offset)
+        if next_state not in (1, 2):
+            return None
+
+        return {
+            "protocol_version": protocol_version,
+            "server_address": server_address,
+            "server_port": server_port,
+            "next_state": next_state,
+            "raw_packet": raw_packet,
+        }
+    except (ConnectionError, ValueError, OSError):
+        return None
+    finally:
+        client_sock.settimeout(None)
+
+# ── Fake status response for sleeping server ─────────────────────────────
+
+def build_status_response():
+    """Build a Minecraft Server List Ping response showing the server is sleeping."""
+    status = {
+        "version": {"name": "1.21.4", "protocol": 770},
+        "players": {"max": 8, "online": 0, "sample": []},
+        "description": {"text": "\u00a76Server is sleeping\u00a7r - \u00a7ajoin to wake up!"},
+        "enforcesSecureChat": False,
+    }
+    json_bytes = json.dumps(status, ensure_ascii=False).encode("utf-8")
+    payload = write_varint(len(json_bytes)) + json_bytes
+    return make_packet(0x00, payload)
+
+def handle_status_ping(client_sock, addr):
+    """Handle full Server List Ping sequence without touching EC2."""
+    try:
+        client_sock.settimeout(5)
+        # Read status request packet
+        try:
+            req_length, _ = read_varint(client_sock)
+            if req_length > 0:
+                client_sock.recv(req_length)
+        except:
+            pass
+
+        # Send status response
+        client_sock.sendall(build_status_response())
+
+        # Handle optional ping packet (packet id 0x01, 8-byte long payload)
+        try:
+            client_sock.settimeout(5)
+            ping_length, _ = read_varint(client_sock)
+            if 1 <= ping_length <= 20:
+                ping_data = b""
+                while len(ping_data) < ping_length:
+                    chunk = client_sock.recv(ping_length - len(ping_data))
+                    if not chunk:
+                        break
+                    ping_data += chunk
+                if len(ping_data) >= 9:
+                    # Echo back: packet_id(0x01) + same 8-byte payload
+                    client_sock.sendall(make_packet(0x01, ping_data[1:]))
+        except:
+            pass
+    finally:
+        try: client_sock.close()
+        except: pass
+
+# ── AWS helpers ──────────────────────────────────────────────────────────
 
 def run_aws(args, timeout=30):
     try:
@@ -106,6 +270,8 @@ def mc_server_is_up():
     except:
         return False
 
+# ── Connection handling ──────────────────────────────────────────────────
+
 def proxy_data(src, dst):
     try:
         while True:
@@ -123,6 +289,25 @@ def proxy_data(src, dst):
 
 def handle_client(client_sock, addr):
     log(f"Connection from {addr[0]}")
+
+    # Stage 1: Validate Minecraft handshake
+    handshake = parse_handshake(client_sock)
+
+    if handshake is None:
+        log(f"[SCANNER] {addr[0]} - invalid handshake, closing")
+        try: client_sock.close()
+        except: pass
+        return
+
+    if handshake["next_state"] == 1:
+        # Status ping (server list refresh) — respond locally, do NOT start EC2
+        log(f"[STATUS] {addr[0]} - server list ping (proto={handshake['protocol_version']})")
+        handle_status_ping(client_sock, addr)
+        return
+
+    # Stage 2: Login attempt — real player wants to join
+    log(f"[LOGIN] {addr[0]} - login attempt (proto={handshake['protocol_version']}, addr={handshake['server_address']})")
+
     state = get_mc_state()
 
     if state in ("stopped", "stopping"):
@@ -151,6 +336,7 @@ def handle_client(client_sock, addr):
         client_sock.close()
         return
 
+    # Stage 3: Proxy to real MC server, replaying the handshake first
     try:
         server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_sock.settimeout(30)
@@ -160,6 +346,9 @@ def handle_client(client_sock, addr):
         log(f"Cannot connect to MC: {e}")
         client_sock.close()
         return
+
+    # Forward the original handshake packet that was consumed during validation
+    server_sock.sendall(handshake["raw_packet"])
 
     log(f"Proxying {addr[0]} <-> MC server")
     t1 = threading.Thread(target=proxy_data, args=(client_sock, server_sock), daemon=True)

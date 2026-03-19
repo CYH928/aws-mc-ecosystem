@@ -22,7 +22,9 @@ Players
 │  - DuckDNS IP updater       │
 │  - IAM: can start MC EC2    │
 └──────────────┬──────────────┘
-               │  player connects → boots MC EC2 via AWS API
+               │  validates MC handshake → rejects scanners
+               │  status ping → fake MOTD (no EC2 start)
+               │  login attempt → boots MC EC2 via AWS API
                │  then proxies all TCP traffic to MC server
                ▼
 ┌─────────────────────────────┐
@@ -52,9 +54,10 @@ CloudWatch  →  billing alarm email when monthly cost > $50
 
 **Solution:** A tiny always-on Watcher machine runs `mc-proxy`, a custom Python TCP proxy (`/opt/mc-proxy/proxy.py`) that:
 1. Listens on port 25565 at all times
-2. When a player connects, runs a shell script that boots the MC EC2 via AWS API
-3. Shows the player a "Server is starting..." message while waiting
-4. Once MC server is online, transparently proxies all game traffic through
+2. Validates Minecraft protocol handshakes — rejects port scanners and garbage connections
+3. Answers server list pings (status) locally with a fake MOTD ("Server is sleeping - join to wake up!") without starting EC2
+4. When a real player attempts to **login** (join), boots the MC EC2 via AWS API
+5. Once MC server is online, replays the handshake and transparently proxies all game traffic through
 
 **Why not Elastic IP?**
 - Elastic IP costs ~$3.6/mo when the instance is stopped (which is most of the time)
@@ -94,7 +97,7 @@ The MC server is assigned a fixed private IP (`cidrhost(subnet_cidr, 100)` in Te
 | Component | Choice | Reason |
 |---|---|---|
 | Game server | PaperMC (managed by Pterodactyl in Docker) | Better performance than vanilla, plugin support |
-| Wake-on-connect | Custom Python TCP proxy (mc-proxy) | Lightweight, no external dependencies, full control over EC2 start/proxy logic |
+| Wake-on-connect | Custom Python TCP proxy (mc-proxy) | Lightweight, validates MC protocol handshake to prevent false starts from scanners, full control over EC2 start/proxy logic |
 | Dynamic DNS | DuckDNS | Free, reliable, simple API |
 | World pre-generation | Chunky plugin | Eliminates chunk-gen lag when players explore |
 | Admin panel | Pterodactyl | Industry standard for game server management |

@@ -27,7 +27,7 @@ chmod +x /usr/local/bin/mcrcon
 # Pterodactyl Panel + Wings + Docker manages all MC server processes.
 # Install Pterodactyl manually after first boot (see scripts/install_pterodactyl.sh).
 
-# ── Auto-stop: 0 players for 15 min → stop this EC2 ──────────────────────
+# ── Auto-stop: 0 players for 3 min → stop this EC2 ───────────────────────
 cat > /usr/local/bin/mc-autostop.sh << 'STOPEOF'
 #!/bin/bash
 RCON_PASS="__RCON_PASSWORD__"
@@ -46,9 +46,9 @@ if echo "$RESPONSE" | grep -q "There are 0"; then
   COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
   COUNT=$((COUNT + 1))
   echo $COUNT > "$COUNTER_FILE"
-  echo "$(date): No players (${COUNT}/3 checks before shutdown)"
+  echo "$(date): No players ($${COUNT}/3 checks before shutdown)"
   if [ "$COUNT" -ge 3 ]; then
-    echo "$(date): 15 min empty - stopping instance"
+    echo "$(date): 3 min empty - stopping instance"
     rm -f "$COUNTER_FILE"
     INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
     /usr/local/bin/aws ec2 stop-instances --region "$AWS_REGION_VAL" --instance-ids "$INSTANCE_ID"

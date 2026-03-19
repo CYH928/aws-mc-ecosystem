@@ -14,7 +14,10 @@ Player connects to mymc.duckdns.org
         ▼
 Watcher machine (always on, ~$3.4/mo)
   - Runs Python TCP proxy (mc-proxy) on port 25565
-  - Detects connection, boots MC EC2 via AWS API
+  - Validates Minecraft protocol handshake first
+  - Port scanners / bots → rejected (no EC2 start)
+  - Server list ping → fake MOTD "sleeping" (no EC2 start)
+  - Real player login → boots MC EC2 via AWS API
   - Proxies game traffic once server is up
         │
         ▼
@@ -157,8 +160,9 @@ This generates a 6000×6000 block area. Takes 20–40 minutes. Players can be on
 
 1. Stop the MC server from AWS Console (EC2 → minecraft-server → Stop)
 2. Open Minecraft → Add Server → `mymc.duckdns.org`
-3. You'll see "Server is hibernating..." — wait ~2 minutes
-4. Server starts automatically and you can join
+3. Server list shows "Server is sleeping - join to wake up!" (this does NOT start the EC2)
+4. Click "Join Server" — this triggers the EC2 to start, wait ~2 minutes
+5. Server starts automatically and you can join
 
 ---
 

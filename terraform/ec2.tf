@@ -65,10 +65,11 @@ resource "aws_instance" "minecraft" {
   private_ip = local.mc_private_ip
 
   root_block_device {
-    volume_type = "gp3"
-    volume_size = 30
-    encrypted   = true
-    tags        = { Name = "minecraft-server-disk" }
+    volume_type           = "gp3"
+    volume_size           = 30
+    encrypted             = true
+    delete_on_termination = false
+    tags                  = { Name = "minecraft-server-root" }
   }
 
   user_data = templatefile("${path.module}/scripts/mc_init.sh", {

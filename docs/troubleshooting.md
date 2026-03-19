@@ -13,18 +13,20 @@ sudo systemctl restart mc-proxy
 sudo journalctl -u mc-proxy -n 50
 ```
 
-### "Server is hibernating" but server never starts
-**Cause:** The mc-proxy failed to boot the MC EC2.
+### Server list shows "Server is sleeping" but joining doesn't start the server
+**Cause:** The mc-proxy validated the handshake but failed to boot the MC EC2.
 ```bash
-# SSH into Watcher
+# SSH into Watcher — look for [LOGIN] entries and any AWS API errors
 sudo journalctl -u mc-proxy -f
-# Watch for AWS API errors in the Python proxy logs
 ```
 
 Common causes:
 - IAM role permissions issue → check `mc-watcher-role` in AWS IAM Console
 - MC server is already starting (not in `stopped` state yet) → wait and retry
 - Wrong AWS region → verify `AWS_REGION` in the mc-proxy.service environment variables
+
+### Proxy log shows only [SCANNER] and [STATUS], no [LOGIN]
+**Cause:** The server list shows "Server is sleeping - join to wake up!" correctly (handled by proxy without EC2 start). Only clicking "Join Server" in Minecraft triggers `[LOGIN]` and EC2 start. This is expected behavior — the proxy validates Minecraft protocol handshakes to prevent false EC2 starts from port scanners.
 
 ### "Can connect to server but can't join" / auth error
 **Cause:** `online-mode=true` requires a legitimate Minecraft account. Player must own the game.
