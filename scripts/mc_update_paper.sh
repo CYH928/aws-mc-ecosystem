@@ -7,7 +7,14 @@
 # ============================================================
 set -euo pipefail
 
-MC_DIR=/home/minecraft/server
+# Find server directory in Pterodactyl volumes dynamically
+MC_DIR=$(find /var/lib/pterodactyl/volumes/ -maxdepth 2 -name "server.properties" -printf "%h\n" 2>/dev/null | head -1)
+if [ -z "$MC_DIR" ]; then
+  echo "ERROR: Could not find Pterodactyl server volume."
+  echo "Check /var/lib/pterodactyl/volumes/"
+  exit 1
+fi
+echo "Found server directory: ${MC_DIR}"
 RCON_PASS=$(grep "rcon.password" "$MC_DIR/server.properties" | cut -d'=' -f2 | tr -d ' ')
 
 # ── Determine target MC version ────────────────────────────────────────────
@@ -67,19 +74,19 @@ if mcrcon -H localhost -P 25575 -p "$RCON_PASS" "say Server updating to Paper ${
   mcrcon -H localhost -P 25575 -p "$RCON_PASS" "stop" 2>/dev/null || true
 fi
 sleep 10
-systemctl stop minecraft || true
+sudo docker stop $(sudo docker ps -q) 2>/dev/null || true
 sleep 5
 
 # ── Replace jar ────────────────────────────────────────────────────────────
 echo "Replacing server.jar..."
 cp "$MC_DIR/server.jar" "$MC_DIR/server.jar.bak"
 cp "/tmp/${NEW_JAR}" "$MC_DIR/server.jar"
-chown minecraft:minecraft "$MC_DIR/server.jar"
+chown pterodactyl:pterodactyl "$MC_DIR/server.jar" 2>/dev/null || chown 988:988 "$MC_DIR/server.jar"
 rm -f "/tmp/${NEW_JAR}"
 
 # ── Start server ───────────────────────────────────────────────────────────
-echo "Starting updated server..."
-systemctl start minecraft
+echo "Restarting Wings to start updated server..."
+systemctl restart wings
 
 echo ""
 echo "======================================================"

@@ -7,12 +7,15 @@ import socket
 import urllib.parse
 import os
 import re
+import time
 
 AWS_REGION = os.environ.get("AWS_REGION", "ap-east-1")
 MC_SERVER_IP = os.environ.get("MC_SERVER_IP", "172.31.16.100")
 AWS_CLI = "/usr/local/bin/aws"
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "koei2026")
 RCON_PASS = os.environ.get("RCON_PASS", "")
+SERVER_NAME = os.environ.get("SERVER_NAME", "Survival World")
+CONNECT_ADDRESS = os.environ.get("CONNECT_ADDRESS", "it114115.duckdns.org")
 
 HTML_PAGE = r'''<!DOCTYPE html>
 <html lang="zh-HK">
@@ -20,94 +23,204 @@ HTML_PAGE = r'''<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MC Server Control</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        dark: { 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569' }
+      }
+    }
+  }
+}
+</script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh;display:flex;justify-content:center;align-items:center}
-.card{background:#16213e;border-radius:16px;padding:32px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
-h1{text-align:center;margin-bottom:24px;font-size:22px;color:#fff}
-.status-box{background:#0f3460;border-radius:12px;padding:20px;margin-bottom:20px;text-align:center}
-.status-label{font-size:13px;color:#888;margin-bottom:4px}
-.status-value{font-size:28px;font-weight:bold}
-.status-value.running{color:#4ecca3}
-.status-value.stopped{color:#e74c3c}
-.status-value.pending,.status-value.stopping{color:#f39c12}
-.status-value.unknown{color:#888}
-.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1a1a3e;font-size:14px}
-.info-row:last-child{border:none}
-.info-label{color:#888}
-.btns{display:flex;gap:12px;margin-top:20px}
-.btn{flex:1;padding:14px;border:none;border-radius:10px;font-size:15px;font-weight:bold;cursor:pointer;transition:all .2s}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-start{background:#4ecca3;color:#1a1a2e}
-.btn-start:hover:not(:disabled){background:#3db892}
-.btn-stop{background:#e74c3c;color:#fff}
-.btn-stop:hover:not(:disabled){background:#c0392b}
-.btn-panel{display:block;text-align:center;margin-top:16px;padding:12px;background:#533483;color:#fff;border-radius:10px;text-decoration:none;font-size:14px;font-weight:bold;transition:all .2s}
-.btn-panel:hover{background:#6c44a2}
-.btn-panel.disabled{opacity:.4;pointer-events:none}
-.msg{text-align:center;margin-top:12px;padding:8px;border-radius:8px;font-size:13px;display:none}
-.msg.ok{display:block;background:#1b4332;color:#4ecca3}
-.msg.err{display:block;background:#3d0000;color:#e74c3c}
-.footer{text-align:center;margin-top:16px;font-size:11px;color:#555}
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
 </style>
 </head>
-<body>
-<div class="card">
-  <h1>Minecraft Server Control</h1>
-  <div class="status-box">
-    <div class="status-label">Server Status</div>
-    <div class="status-value" id="status">Loading...</div>
+<body class="bg-dark-900 min-h-screen flex items-center justify-center p-4">
+<div class="w-full max-w-md">
+  <!-- Header -->
+  <div class="text-center mb-6">
+    <div class="inline-flex items-center gap-2 mb-2">
+      <svg class="w-8 h-8 text-emerald-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      <h1 class="text-2xl font-bold text-white">MC Server Control</h1>
+    </div>
+    <p class="text-slate-500 text-sm" id="serverName">Loading...</p>
   </div>
-  <div id="info"></div>
-  <div class="btns">
-    <button class="btn btn-start" id="startBtn" onclick="doAction('start')" disabled>Start</button>
-    <button class="btn btn-stop" id="stopBtn" onclick="doAction('stop')" disabled>Stop</button>
+
+  <!-- Status Card -->
+  <div class="bg-dark-800 rounded-2xl border border-slate-700/50 overflow-hidden shadow-2xl">
+    <!-- Status Header -->
+    <div class="p-6 border-b border-slate-700/50">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="relative">
+            <div class="w-3 h-3 rounded-full" id="statusDot"></div>
+            <div class="absolute inset-0 w-3 h-3 rounded-full pulse-dot" id="statusDotPulse"></div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 uppercase tracking-wider">Status</div>
+            <div class="text-lg font-semibold" id="statusText">Loading...</div>
+          </div>
+        </div>
+        <div id="playerBadge" class="hidden">
+          <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1">
+            <span class="text-emerald-400 text-sm font-medium" id="playerCount"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Grid -->
+    <div class="p-6 space-y-3" id="infoGrid">
+    </div>
+
+    <!-- Warning -->
+    <div id="warning" class="hidden px-6 pb-4">
+      <div class="flex items-center gap-2 text-amber-400 text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+        <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+        <span id="warningText"></span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="p-6 pt-2 space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <button id="startBtn" onclick="doAction('start')" disabled
+          class="relative flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl transition-all duration-200 disabled:cursor-not-allowed">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/></svg>
+          Start
+        </button>
+        <button id="stopBtn" onclick="doAction('stop')" disabled
+          class="relative flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl transition-all duration-200 disabled:cursor-not-allowed">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5.25 3A2.25 2.25 0 003 5.25v9.5A2.25 2.25 0 005.25 17h9.5A2.25 2.25 0 0017 14.75v-9.5A2.25 2.25 0 0014.75 3h-9.5z"/></svg>
+          Stop
+        </button>
+      </div>
+
+      <a id="panelLink" href="#" target="_blank"
+        class="flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-all duration-200 pointer-events-none opacity-40">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5zm7.25-.75a.75.75 0 01.75-.75h3.5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-1.69l-5.22 5.22a.75.75 0 01-1.06-1.06l5.22-5.22h-1.69a.75.75 0 01-.75-.75z" clip-rule="evenodd"/></svg>
+        Open Pterodactyl Panel
+      </a>
+    </div>
+
+    <!-- Message -->
+    <div id="msg" class="hidden px-6 pb-6">
+      <div class="rounded-xl px-4 py-3 text-sm font-medium text-center" id="msgInner"></div>
+    </div>
   </div>
-  <a class="btn-panel disabled" id="panelLink" href="#" target="_blank">Open Pterodactyl Panel</a>
-  <div class="msg" id="msg"></div>
-  <div class="footer">Watcher Control Panel</div>
+
+  <!-- Footer -->
+  <p class="text-center text-slate-600 text-xs mt-4">Watcher Control Panel</p>
 </div>
+
 <script>
-const TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+var TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+var CONNECT = '';
+
 function api(path, method) {
   return fetch('/api/' + path + '?token=' + TOKEN, {method: method || 'GET'}).then(function(r) { return r.json(); });
 }
+
 function refresh() {
   api('status').then(function(d) {
-    var s = document.getElementById('status');
-    s.textContent = d.state || 'unknown';
-    s.className = 'status-value ' + (d.state || 'unknown');
-    document.getElementById('startBtn').disabled = d.state === 'running' || d.state === 'pending';
-    document.getElementById('stopBtn').disabled = d.state !== 'running';
-    var pl = document.getElementById('panelLink');
-    if (d.state === 'running' && d.public_ip) {
-      pl.href = 'http://' + d.public_ip + ':8080';
-      pl.className = 'btn-panel';
+    // Server name and connect address
+    document.getElementById('serverName').textContent = d.server_name || 'Minecraft Server';
+    CONNECT = d.connect_address || CONNECT;
+
+    // Status
+    var statusText = document.getElementById('statusText');
+    var statusDot = document.getElementById('statusDot');
+    var statusDotPulse = document.getElementById('statusDotPulse');
+    var state = d.state || 'unknown';
+    statusText.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+
+    var colors = {
+      running: ['bg-emerald-400', 'bg-emerald-400', 'text-emerald-400'],
+      stopped: ['bg-red-400', 'bg-red-400', 'text-red-400'],
+      stopping: ['bg-amber-400', 'bg-amber-400', 'text-amber-400'],
+      pending: ['bg-amber-400', 'bg-amber-400', 'text-amber-400'],
+      unknown: ['bg-slate-400', 'bg-slate-400', 'text-slate-400']
+    };
+    var c = colors[state] || colors.unknown;
+    statusDot.className = 'w-3 h-3 rounded-full ' + c[0];
+    statusDotPulse.className = 'absolute inset-0 w-3 h-3 rounded-full pulse-dot ' + c[1];
+    statusText.className = 'text-lg font-semibold ' + c[2];
+
+    // Players
+    var playerBadge = document.getElementById('playerBadge');
+    var hasPlayers = d.player_count > 0;
+    if (d.players) {
+      playerBadge.className = 'block';
+      document.getElementById('playerCount').textContent = d.players + ' players';
     } else {
-      pl.className = 'btn-panel disabled';
+      playerBadge.className = 'hidden';
     }
+
+    // Buttons
+    document.getElementById('startBtn').disabled = state === 'running' || state === 'pending';
+    var stopBtn = document.getElementById('stopBtn');
+    stopBtn.disabled = state !== 'running' || hasPlayers;
+    stopBtn.title = hasPlayers ? 'Cannot stop while players are online' : '';
+
+    // Warning
+    var warning = document.getElementById('warning');
+    if (hasPlayers) {
+      warning.className = 'px-6 pb-4';
+      document.getElementById('warningText').textContent = 'Cannot stop server while ' + d.player_count + ' player(s) are online';
+    } else {
+      warning.className = 'hidden';
+    }
+
+    // Panel link
+    var pl = document.getElementById('panelLink');
+    if (state === 'running' && d.public_ip) {
+      pl.href = 'http://' + d.public_ip + ':8080';
+      pl.className = 'flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl transition-all duration-200';
+    } else {
+      pl.className = 'flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 text-white font-semibold rounded-xl transition-all duration-200 pointer-events-none opacity-40';
+    }
+
+    // Info grid
     var info = '';
-    if (d.public_ip) info += '<div class="info-row"><span class="info-label">Public IP</span><span>' + d.public_ip + '</span></div>';
-    info += '<div class="info-row"><span class="info-label">Connect</span><span>it114115.duckdns.org</span></div>';
-    if (d.players) info += '<div class="info-row"><span class="info-label">Players</span><span>' + d.players + '</span></div>';
-    document.getElementById('info').innerHTML = info;
+    info += '<div class="flex items-center justify-between"><span class="text-slate-500 text-sm">Connect</span><span class="text-white text-sm font-mono">' + CONNECT + '</span></div>';
+    if (d.public_ip) info += '<div class="flex items-center justify-between"><span class="text-slate-500 text-sm">Public IP</span><span class="text-slate-300 text-sm font-mono">' + d.public_ip + '</span></div>';
+    if (d.players) info += '<div class="flex items-center justify-between"><span class="text-slate-500 text-sm">Players</span><span class="text-emerald-400 text-sm font-bold">' + d.players + '</span></div>';
+    if (state === 'stopped') info += '<div class="flex items-center justify-between"><span class="text-slate-500 text-sm">Note</span><span class="text-slate-400 text-xs">Connect via Minecraft to auto-start</span></div>';
+    document.getElementById('infoGrid').innerHTML = info;
   });
 }
+
 function doAction(action) {
   var msg = document.getElementById('msg');
-  msg.className = 'msg ok';
-  msg.textContent = action === 'start' ? 'Starting... please wait 2-3 minutes' : 'Stopping...';
-  msg.style.display = 'block';
+  var msgInner = document.getElementById('msgInner');
+  msg.className = 'px-6 pb-6';
+  if (action === 'start') {
+    msgInner.className = 'rounded-xl px-4 py-3 text-sm font-medium text-center bg-emerald-500/10 border border-emerald-500/20 text-emerald-400';
+    msgInner.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full spin mr-2 align-middle"></span>Starting server...';
+  } else {
+    msgInner.className = 'rounded-xl px-4 py-3 text-sm font-medium text-center bg-red-500/10 border border-red-500/20 text-red-400';
+    msgInner.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full spin mr-2 align-middle"></span>Backing up & shutting down...';
+  }
   document.getElementById('startBtn').disabled = true;
   document.getElementById('stopBtn').disabled = true;
   api(action, 'POST').then(function(d) {
-    msg.className = 'msg ' + (d.ok ? 'ok' : 'err');
-    msg.textContent = d.message;
+    msgInner.textContent = d.message;
+    msgInner.className = 'rounded-xl px-4 py-3 text-sm font-medium text-center ' +
+      (d.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400');
     setTimeout(refresh, 5000);
+    setTimeout(function() { msg.className = 'hidden'; }, 15000);
   });
 }
+
 refresh();
-setInterval(refresh, 10000);
+setInterval(refresh, 8000);
 </script>
 </body>
 </html>'''
@@ -125,6 +238,7 @@ def get_mc_info():
     info = run_aws(["ec2", "describe-instances",
         "--region", AWS_REGION,
         "--filters", "Name=tag:Name,Values=minecraft-server",
+                     "Name=instance-state-name,Values=running,stopped,stopping,pending",
         "--query", "Reservations[0].Instances[0].{State:State.Name,IP:PublicIpAddress,Id:InstanceId}",
         "--output", "json"])
     try:
@@ -134,14 +248,42 @@ def get_mc_info():
 
 
 def get_players():
+    """Returns (count, display_string) via Minecraft Server List Ping protocol on port 25565"""
     try:
-        r = subprocess.run(
-            ["mcrcon", "-H", MC_SERVER_IP, "-P", "25575", "-p", RCON_PASS, "list"],
-            capture_output=True, text=True, timeout=5)
-        m = re.search(r"(\d+) of", r.stdout)
-        return m.group(1) + "/8" if m else None
+        import struct
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect((MC_SERVER_IP, 25565))
+
+        # Send handshake packet (protocol version -1 = status)
+        host_bytes = MC_SERVER_IP.encode('utf-8')
+        handshake_data = b'\x00'  # packet id
+        handshake_data += b'\xff\xff\xff\x0f'  # protocol version (-1 as varint)
+        handshake_data += bytes([len(host_bytes)]) + host_bytes  # server address
+        handshake_data += struct.pack('>H', 25565)  # server port
+        handshake_data += b'\x01'  # next state (1 = status)
+        # Send with length prefix
+        s.send(bytes([len(handshake_data)]) + handshake_data)
+
+        # Send status request
+        s.send(b'\x01\x00')
+
+        # Read response
+        data = s.recv(4096)
+        s.close()
+
+        # Parse: skip varint length + packet id, find JSON
+        json_start = data.find(b'{')
+        json_end = data.rfind(b'}') + 1
+        if json_start >= 0 and json_end > json_start:
+            status = json.loads(data[json_start:json_end].decode('utf-8', errors='ignore'))
+            players = status.get("players", {})
+            online = players.get("online", 0)
+            maximum = players.get("max", 8)
+            return online, str(online) + "/" + str(maximum)
+        return 0, "0/8"
     except Exception:
-        return None
+        return 0, None
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -171,12 +313,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self.check_auth():
                 return self.send_json({"error": "unauthorized"}, 401)
             info = get_mc_info()
-            players = get_players() if info.get("State") == "running" else None
+            player_count = 0
+            player_display = None
+            if info.get("State") == "running":
+                player_count, player_display = get_players()
             self.send_json({
                 "state": info.get("State", "unknown"),
                 "public_ip": info.get("IP"),
                 "instance_id": info.get("Id"),
-                "players": players
+                "players": player_display,
+                "player_count": player_count,
+                "server_name": SERVER_NAME,
+                "connect_address": CONNECT_ADDRESS
             })
         else:
             self.send_json({"error": "not found"}, 404)
@@ -198,31 +346,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/stop":
             if info.get("State") != "running":
                 return self.send_json({"ok": True, "message": "Server is not running"})
-            # Graceful shutdown: save world via RCON, then stop Pterodactyl, then EC2
+            # Graceful shutdown: backup -> warn players -> save -> stop MC -> stop EC2
             import threading
             def graceful_stop(instance_id):
                 try:
-                    # 1. Save world and stop MC via RCON
-                    subprocess.run(["mcrcon", "-H", MC_SERVER_IP, "-P", "25575", "-p", RCON_PASS,
-                        "say Server shutting down in 10 seconds..."], capture_output=True, timeout=5)
-                    time.sleep(10)
-                    subprocess.run(["mcrcon", "-H", MC_SERVER_IP, "-P", "25575", "-p", RCON_PASS,
-                        "save-all"], capture_output=True, timeout=10)
-                    time.sleep(5)
-                    subprocess.run(["mcrcon", "-H", MC_SERVER_IP, "-P", "25575", "-p", RCON_PASS,
-                        "stop"], capture_output=True, timeout=10)
-                    time.sleep(15)  # wait for MC to fully stop
+                    # Run backup + graceful stop on MC server via SSH
+                    subprocess.run(["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5",
+                        "ubuntu@" + MC_SERVER_IP,
+                        "sudo /usr/local/bin/mc-backup.sh && sleep 2 && "
+                        "CONTAINER_IP=$(sudo docker inspect $(sudo docker ps -q | head -1) --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null) && "
+                        "mcrcon -H $CONTAINER_IP -P 25575 -p '" + RCON_PASS + "' 'say Server shutting down in 10 seconds...' 2>/dev/null; "
+                        "sleep 10; "
+                        "mcrcon -H $CONTAINER_IP -P 25575 -p '" + RCON_PASS + "' 'save-all' 2>/dev/null; "
+                        "sleep 5; "
+                        "mcrcon -H $CONTAINER_IP -P 25575 -p '" + RCON_PASS + "' 'stop' 2>/dev/null; "
+                        "sleep 15"],
+                        capture_output=True, timeout=180)
                 except Exception:
                     pass
-                # 2. Stop EC2
+                # 4. Stop EC2
                 run_aws(["ec2", "stop-instances", "--region", AWS_REGION, "--instance-ids", instance_id])
             threading.Thread(target=graceful_stop, args=(iid,), daemon=True).start()
-            self.send_json({"ok": True, "message": "Saving world... server will stop in ~30 seconds"})
+            self.send_json({"ok": True, "message": "Backing up world then shutting down... ~2 minutes"})
         else:
             self.send_json({"error": "not found"}, 404)
 
 
 if __name__ == "__main__":
-    print("MC Web Panel listening on :8080", flush=True)
+    print(f"MC Web Panel listening on :8080 | Server: {SERVER_NAME}", flush=True)
     server = http.server.HTTPServer(("0.0.0.0", 8080), Handler)
     server.serve_forever()

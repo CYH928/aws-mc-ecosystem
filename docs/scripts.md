@@ -47,38 +47,36 @@ Scripts are split into two locations based on purpose:
 ## mc_init.sh (Auto — MC Server machine)
 
 **Runs on:** t3.xlarge MC Server, on first boot via Terraform `user_data`
-**Purpose:** Full Minecraft server setup
+**Purpose:** Installs base tools and sets up cron scripts. Does NOT install PaperMC, create server.properties, or create any minecraft.service — all MC server management is handled by Pterodactyl Panel + Wings (Docker containers).
 
 ### What it does step by step:
 
-1. **Installs system packages:** Java 21, AWS CLI v2, jq, curl, unzip, screen
-2. **Installs mcrcon** — command-line RCON client used by auto-stop and backup scripts to communicate with the running Minecraft server
-3. **Creates `minecraft` Linux user** — server runs under this user (not root)
-4. **Downloads latest PaperMC build** — queries the PaperMC API to get the latest build number for the configured MC version, then downloads that exact jar
-5. **Writes `eula.txt`** — accepts Minecraft EULA (required to run)
-6. **Writes `server.properties`** — key settings:
-   - `max-players=8`
-   - `view-distance=8`, `simulation-distance=6` (performance-tuned for t3.xlarge)
-   - `enable-rcon=true` with the configured password (required for auto-stop and backup scripts)
-7. **Downloads Chunky plugin** — placed in `plugins/` directory. After first server start, run `/chunky radius 3000 && /chunky start` to pre-generate 3000-block radius. This eliminates chunk-gen lag when players explore new areas.
-8. **Creates systemd service** `minecraft.service`:
-   - JVM flags: `-Xmx12G -Xms4G` (leaves ~4 GB for OS on t3.xlarge's 16 GB RAM)
-   - G1GC flags for reduced pause times
-   - `ExecStop` uses mcrcon to send `stop` command for a clean shutdown
-9. **Saves bucket name** to `/etc/mc-backup-bucket` so `mc_restore.sh` can auto-detect it
-10. **Writes auto-stop script** `/usr/local/bin/mc-autostop.sh`:
-    - Runs via cron every 5 minutes
+1. **Installs system packages:** Java 21, AWS CLI v2, jq, curl, unzip
+2. **Installs mcrcon** — command-line RCON client used by auto-stop and backup scripts to communicate with the running Minecraft server via RCON
+3. **Saves bucket name** to `/etc/mc-backup-bucket` so backup/restore scripts can auto-detect it
+4. **Writes auto-stop script** `/usr/local/bin/mc-autostop.sh`:
+    - Runs via cron every 1 minute
     - Uses mcrcon to run `list` command and checks for "There are 0" in response
     - Increments a counter file `/tmp/mc_empty_count` each empty check
-    - After 3 consecutive empty checks (= 15 minutes), calls AWS API to stop itself
+    - After 3 consecutive empty checks (= 3 minutes), calls AWS API to stop itself
     - Resets counter whenever players are detected
-    - Skips check if `minecraft.service` is not active (prevents shutdown during startup)
-11. **Writes S3 backup script** `/usr/local/bin/mc-backup.sh`:
-    - Runs via cron every 6 hours
+    - Skips check if no Pterodactyl Docker containers are running (prevents shutdown during startup)
+5. **Writes S3 backup script** `/usr/local/bin/mc-backup.sh`:
+    - Runs via cron every 1 hour
+    - Dynamically finds world data in Pterodactyl volumes (`/var/lib/pterodactyl/volumes/<uuid>/`)
     - Sends `save-off` and `save-all` via RCON before backup (ensures consistent world state)
     - `tar.gz` compresses world, world_nether, world_the_end
     - Uploads to `s3://BUCKET/backups/mc-backup-YYYYMMDD-HHMM.tar.gz`
     - Sends `save-on` after backup completes
+    - Also triggered on boot (by `fix-panel-ip.sh`) and before shutdown (by MC Web Control Panel)
+
+### What is NOT in mc_init.sh (handled by Pterodactyl instead):
+
+- PaperMC download — done through Pterodactyl Panel GUI when creating a server
+- `server.properties` — configured through Pterodactyl Panel Files tab
+- `eula.txt` — accepted through Pterodactyl Panel Files tab
+- Chunky plugin — uploaded through Pterodactyl Panel Files tab
+- `minecraft.service` — does not exist; Pterodactyl Wings manages MC processes in Docker containers
 
 ### Template variables (injected by Terraform):
 - `${backup_bucket}`, `${aws_region}`, `${mc_version}`, `${rcon_password}`
@@ -184,7 +182,7 @@ sudo bash mc_update_paper.sh
 ### What it does:
 
 1. **Start EC2** — boots the MC server EC2 instance via AWS API
-2. **Stop EC2** — graceful shutdown sequence: warns players (10 second countdown) → `save-all` → `stop` MC process → stop EC2 instance (~30 seconds total)
+2. **Stop EC2** — graceful shutdown sequence: warns players (10 second countdown) → `save-all` → `stop` MC process → run S3 backup → stop EC2 instance (~30 seconds total)
 3. **Show status** — displays whether the MC EC2 is running or stopped
 4. **Show players** — lists currently online players
 5. **Link to Pterodactyl Panel** — provides a direct link with the current public IP (since the IP changes on every boot)
@@ -216,7 +214,8 @@ The MC server has no Elastic IP, so its public IP changes every time the EC2 ins
 3. **Updates Node FQDN** in the Pterodactyl database
 4. **Updates Wings CORS** `allowed_origins` in `/etc/pterodactyl/config.yml`
 5. **Restarts Panel and Wings services** to apply changes
-6. **Auto-starts all Pterodactyl servers** so the MC game server is ready without manual intervention
+6. **Runs S3 backup** of the current world data (safety backup on boot)
+7. **Auto-starts all Pterodactyl servers** so the MC game server is ready without manual intervention
 
 ### Why this matters:
 
@@ -238,7 +237,7 @@ bash mc_status.sh
 
 ### What it shows:
 - EC2 state of both instances (running/stopped) with public IPs and start time
-- Minecraft service status (running/stopped)
+- Pterodactyl Docker container status (running/stopped)
 - Live player list (via RCON)
 - Current TPS (ticks per second — below 20 = server is struggling)
 - RAM and CPU usage

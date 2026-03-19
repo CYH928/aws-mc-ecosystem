@@ -90,13 +90,13 @@ mcrcon -H localhost -P 25575 -p YOUR_RCON_PASSWORD "list"
 # If this fails, RCON is not working → auto-stop cannot check player count
 ```
 
-If RCON fails, check `server.properties`:
+If RCON fails, check `server.properties` in Pterodactyl Panel → Files tab:
 ```
 enable-rcon=true
 rcon.password=YOUR_PASSWORD
 rcon.port=25575
 ```
-Then restart: `sudo systemctl restart minecraft`
+Then restart the server from Pterodactyl Panel Console tab.
 
 ### Counter file stuck
 If the server thinks 0 players even when players are online:
@@ -124,12 +124,15 @@ Common causes:
 - Bucket name mismatch in `/etc/mc-backup-bucket`
 - World folder name different (e.g., custom world name in `server.properties`)
 
-Check world folder name:
+Check world folder in Pterodactyl volumes:
 ```bash
-ls /home/minecraft/server/
+# Find the Pterodactyl server volume
+ls /var/lib/pterodactyl/volumes/
+# Then check inside the volume UUID directory:
+ls /var/lib/pterodactyl/volumes/<uuid>/
 # Should see: world  world_nether  world_the_end
 ```
-If world is named differently, edit the `tar` command in `/usr/local/bin/mc-backup.sh`.
+The backup script dynamically finds the world in Pterodactyl volumes.
 
 ---
 
@@ -220,8 +223,12 @@ EBS root volume is deleted on termination by default. Recovery options:
 ls /tmp/world-before-restore-*.tar.gz
 
 # Manual restore:
-sudo systemctl stop minecraft
-rm -rf /home/minecraft/server/world*
-tar -xzf /tmp/world-before-restore-DATETIME.tar.gz -C /home/minecraft/server/
-sudo systemctl start minecraft
+# 1. Stop the server in Pterodactyl Panel
+# 2. Find the Pterodactyl volume:
+ls /var/lib/pterodactyl/volumes/
+# 3. Remove world data and restore:
+VOLUME_DIR=$(ls /var/lib/pterodactyl/volumes/ | head -1)
+rm -rf /var/lib/pterodactyl/volumes/$VOLUME_DIR/world*
+tar -xzf /tmp/world-before-restore-DATETIME.tar.gz -C /var/lib/pterodactyl/volumes/$VOLUME_DIR/
+# 4. Start the server from Pterodactyl Panel
 ```

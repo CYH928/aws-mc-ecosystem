@@ -93,7 +93,7 @@ AWS sends a confirmation email to your `alert_email`. Check your inbox and click
 
 ## Step 4: Wait for Boot Scripts
 
-The `mc_init.sh` user_data script runs on first boot and takes **5–8 minutes** to complete (downloads Java, PaperMC, AWS CLI, etc.).
+The `mc_init.sh` user_data script runs on first boot and takes **3–5 minutes** to complete (installs Java, AWS CLI, mcrcon, and sets up cron scripts). It does NOT install PaperMC or create a minecraft.service — those are handled by Pterodactyl.
 
 Check progress:
 ```bash
@@ -123,11 +123,30 @@ After completion, follow the printed "NEXT STEPS" to connect Wings to the Panel.
 
 ---
 
+## Step 5b: Create MC Server in Pterodactyl Panel
+
+After Pterodactyl is installed and Wings is connected:
+
+1. Log into Pterodactyl Panel (Admin area)
+2. Create a new Server (Egg: Paper, Java 21, version 1.21.x)
+3. Set resources: Memory 12288 MB, Disk 20000 MB, CPU unlimited
+4. Wait for automatic installation to finish
+5. Accept EULA: Files tab → edit `eula.txt` → set `eula=true` → Save
+6. Configure `server.properties` through the Files tab (max-players, RCON, view-distance, etc.)
+7. Upload Chunky plugin through the Files tab → `plugins/` folder
+8. Start the server
+
+PaperMC download, server.properties, eula.txt, and plugins are all managed through the Pterodactyl Panel GUI — there is no minecraft.service or standalone PaperMC installation.
+
+See [docs/pterodactyl-admin-guide.md](pterodactyl-admin-guide.md) for detailed instructions.
+
+---
+
 ## Step 6: Pre-generate World (Important!)
 
 Without pre-generation, multiple players exploring simultaneously causes severe lag (chunk generation is CPU-intensive).
 
-Connect to the server via Minecraft client, then in the server console or via RCON:
+Connect to the server via Minecraft client, then use the Pterodactyl Console or RCON:
 ```bash
 mcrcon -H localhost -P 25575 -p your-rcon-password
 ```

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Cost-optimized Minecraft Java Edition server on AWS for 8 players. Two-machine architecture: an always-on t4g.nano Watcher runs a custom Python TCP proxy (mc-proxy) to wake a t3.xlarge MC server on demand, and the MC server auto-stops after 15 minutes of inactivity. All infrastructure managed by Terraform.
+Cost-optimized Minecraft Java Edition server on AWS for 8 players. Two-machine architecture: an always-on t4g.nano Watcher runs a custom Python TCP proxy (mc-proxy) to wake a t3.xlarge MC server on demand, and the MC server auto-stops after 3 minutes of inactivity. All infrastructure managed by Terraform.
 
 ## Commands
 
@@ -25,7 +25,7 @@ Manual scripts are in `scripts/` and must be copied to the server via `scp` befo
 
 - **Watcher** (`t4g.nano`, ARM64, always on): runs a custom Python TCP proxy (`mc-proxy`) at `/opt/mc-proxy/proxy.py` on port 25565. When a player connects, it checks EC2 state, starts the MC EC2 if stopped via AWS API, waits for boot, then proxies TCP traffic to the MC server's fixed private IP. Runs as `mc-proxy.service` with environment variables (MC_SERVER_IP, AWS_REGION, etc.) configured in the systemd unit. Also runs DuckDNS updater on cron. Also runs **MC Web Control Panel** (`mc-web-panel.service`) at `/opt/mc-web-panel/app.py` on port 8080 — a Python web UI for Start/Stop EC2, status, player list, and a link to Pterodactyl Panel. Always accessible since the Watcher never stops. Auth via `?token=` query parameter.
 
-- **MC Server** (`t3.xlarge`, x86_64, on-demand): runs PaperMC + Pterodactyl Panel. Has two cron jobs: auto-stop (checks player count via RCON every 5 min, stops EC2 after 3 consecutive empty checks) and S3 backup (every 6 hours). Runs **`fix-panel-ip.service`** on every boot (`/opt/fix-panel-ip.sh`) which auto-updates Panel APP_URL, Node FQDN, and Wings CORS to the current public IP, then auto-starts all Pterodactyl servers. This solves the "IP changes on every stop/start" problem.
+- **MC Server** (`t3.xlarge`, x86_64, on-demand): runs Pterodactyl Panel + Wings which manages PaperMC inside Docker containers. There is no `minecraft.service` — all MC server processes are managed by Pterodactyl/Wings/Docker. World data lives at `/var/lib/pterodactyl/volumes/<uuid>/world/`. Has two cron jobs: auto-stop (checks player count every 1 min, stops EC2 after 3 consecutive empty checks (3 min idle)) and S3 backup (every 1 hour). Backup also runs on boot (via `fix-panel-ip.sh`) and before shutdown (via MC Web Control Panel). Runs **`fix-panel-ip.service`** on every boot (`/opt/fix-panel-ip.sh`) which auto-updates Panel APP_URL, Node FQDN, and Wings CORS to the current public IP, runs a backup, then auto-starts all Pterodactyl servers. This solves the "IP changes on every stop/start" problem.
 
 **Key design decisions:**
 - MC server uses a fixed private IP via `cidrhost(subnet_cidr, 100)` so the Watcher always knows where to proxy, without needing an Elastic IP.

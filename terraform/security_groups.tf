@@ -52,6 +52,15 @@ resource "aws_security_group" "minecraft" {
     security_groups = [aws_security_group.watcher.id]
   }
 
+  # RCON: from watcher only (for player count, graceful stop)
+  ingress {
+    description     = "RCON from watcher"
+    from_port       = 25575
+    to_port         = 25575
+    protocol        = "tcp"
+    security_groups = [aws_security_group.watcher.id]
+  }
+
   ingress {
     description = "SSH admin"
     from_port   = 22

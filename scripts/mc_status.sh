@@ -46,12 +46,13 @@ echo "  Watcher    : ${WATCHER_STATE} (${WATCHER_IP})"
 
 # ── Minecraft process (only works on MC machine) ───────────────────────────
 echo ""
-echo "[Minecraft Service]"
-if systemctl is-active --quiet minecraft 2>/dev/null; then
-  echo "  minecraft.service : RUNNING"
+echo "[Minecraft Server (Pterodactyl/Docker)]"
+RUNNING_CONTAINERS=$(sudo docker ps -q 2>/dev/null | wc -l)
+if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
+  echo "  Docker containers : ${RUNNING_CONTAINERS} RUNNING"
 
   # Player list via RCON
-  RCON_PASS=$(grep "rcon.password" /home/minecraft/server/server.properties 2>/dev/null | cut -d'=' -f2 | tr -d ' ')
+  RCON_PASS=$(find /var/lib/pterodactyl/volumes/ -name "server.properties" -exec grep "rcon.password" {} \; 2>/dev/null | head -1 | cut -d'=' -f2 | tr -d ' ')
   if [ -n "${RCON_PASS:-}" ] && command -v mcrcon &>/dev/null; then
     PLAYER_LIST=$(mcrcon -H localhost -P 25575 -p "$RCON_PASS" "list" 2>/dev/null || echo "RCON unavailable")
     echo "  Players           : ${PLAYER_LIST}"
@@ -60,7 +61,7 @@ if systemctl is-active --quiet minecraft 2>/dev/null; then
     echo "  TPS               : ${TPS}"
   fi
 else
-  echo "  minecraft.service : STOPPED (or not on MC machine)"
+  echo "  Docker containers : NONE RUNNING (or not on MC machine)"
 fi
 
 # ── System resources (only on MC machine) ─────────────────────────────────
@@ -75,7 +76,7 @@ fi
 CPU_LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs)
 echo "  CPU load avg : ${CPU_LOAD}"
 
-DISK=$(df -h /home/minecraft/server 2>/dev/null | awk 'NR==2 {print $3 " / " $2 " (" $5 " used)"}' || echo "N/A")
+DISK=$(df -h /var/lib/pterodactyl/volumes 2>/dev/null | awk 'NR==2 {print $3 " / " $2 " (" $5 " used)"}' || echo "N/A")
 echo "  Disk (world) : ${DISK}"
 
 # ── Recent backup status ───────────────────────────────────────────────────

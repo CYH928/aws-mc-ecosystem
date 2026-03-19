@@ -4,7 +4,7 @@
 
 A cost-optimized Minecraft Java Edition server on AWS, designed for **8 concurrent players**.
 
-The key design goal: **pay only when players are online**. The Minecraft server (expensive) automatically starts when a player tries to connect, and shuts itself down after 15 minutes of inactivity.
+The key design goal: **pay only when players are online**. The Minecraft server (expensive) automatically starts when a player tries to connect, and shuts itself down after 3 minutes of inactivity.
 
 ---
 
@@ -27,15 +27,15 @@ Players
                ▼
 ┌─────────────────────────────┐
 │  Minecraft Server           │  t3.xlarge — STARTS/STOPS ON DEMAND
-│  - PaperMC (game server)    │
-│  - Pterodactyl Panel + Wings│
+│  - Pterodactyl Panel + Wings│  manages PaperMC in Docker containers
+│  - Docker (MC processes)    │
 │  - fix-panel-ip.service     │  auto-fix IP on every boot
 │  - Auto-stop script (cron)  │
 │  - S3 backup script (cron)  │
 │  - IAM: can stop itself     │
 │  - IAM: can write S3        │
 └──────────────┬──────────────┘
-               │  world data backup every 6 hours
+               │  world data backup every 1 hour + on boot/shutdown
                ▼
 ┌─────────────────────────────┐
 │  S3 Bucket                  │  backups auto-deleted after 30 days
@@ -93,7 +93,7 @@ The MC server is assigned a fixed private IP (`cidrhost(subnet_cidr, 100)` in Te
 
 | Component | Choice | Reason |
 |---|---|---|
-| Game server | PaperMC | Better performance than vanilla, plugin support |
+| Game server | PaperMC (managed by Pterodactyl in Docker) | Better performance than vanilla, plugin support |
 | Wake-on-connect | Custom Python TCP proxy (mc-proxy) | Lightweight, no external dependencies, full control over EC2 start/proxy logic |
 | Dynamic DNS | DuckDNS | Free, reliable, simple API |
 | World pre-generation | Chunky plugin | Eliminates chunk-gen lag when players explore |

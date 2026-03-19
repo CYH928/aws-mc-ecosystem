@@ -8,7 +8,17 @@
 set -euo pipefail
 
 # ── Config (auto-detected from instance metadata) ─────────────────────────
-MC_DIR=/home/minecraft/server
+# Find world data in Pterodactyl volumes dynamically
+MC_DIR=$(find /var/lib/pterodactyl/volumes/ -maxdepth 2 -name "server.properties" -printf "%h\n" 2>/dev/null | head -1)
+if [ -z "$MC_DIR" ]; then
+  MC_DIR=$(ls -d /var/lib/pterodactyl/volumes/*/ 2>/dev/null | head -1)
+fi
+if [ -z "$MC_DIR" ]; then
+  echo "ERROR: Could not find Pterodactyl server volume."
+  echo "Check /var/lib/pterodactyl/volumes/"
+  exit 1
+fi
+echo "Found server directory: ${MC_DIR}"
 AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 BACKUP_BUCKET=$(cat /etc/mc-backup-bucket 2>/dev/null || echo "")
 
@@ -54,9 +64,9 @@ if [[ "${CONFIRM,,}" != "y" ]]; then
   exit 0
 fi
 
-# ── Stop Minecraft server ──────────────────────────────────────────────────
-echo "Stopping Minecraft server..."
-systemctl stop minecraft || true
+# ── Stop Minecraft server (Pterodactyl Docker containers) ─────────────────
+echo "Stopping Minecraft server (Docker containers)..."
+sudo docker stop $(sudo docker ps -q) 2>/dev/null || true
 sleep 5
 
 # ── Backup current world (safety) ─────────────────────────────────────────
@@ -80,14 +90,14 @@ rm -rf "$MC_DIR/world" "$MC_DIR/world_nether" "$MC_DIR/world_the_end"
 # ── Extract ────────────────────────────────────────────────────────────────
 echo "Extracting backup..."
 tar -xzf "/tmp/${CHOSEN_BACKUP}" -C "$MC_DIR"
-chown -R minecraft:minecraft "$MC_DIR"
+chown -R pterodactyl:pterodactyl "$MC_DIR" 2>/dev/null || chown -R 988:988 "$MC_DIR"
 
 # ── Cleanup ────────────────────────────────────────────────────────────────
 rm -f "/tmp/${CHOSEN_BACKUP}"
 
-# ── Start Minecraft server ─────────────────────────────────────────────────
-echo "Starting Minecraft server..."
-systemctl start minecraft
+# ── Start Minecraft server (restart Wings to pick up changes) ─────────────
+echo "Restarting Wings to start Minecraft server..."
+systemctl restart wings
 
 echo ""
 echo "======================================================"

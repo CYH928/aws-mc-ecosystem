@@ -1,6 +1,6 @@
 # Minecraft Java Server on AWS
 
-Cost-optimized Minecraft Java server for 8 players. **Automatically starts when a player connects, shuts down after 15 minutes of inactivity.** You only pay when people are actually playing.
+Cost-optimized Minecraft Java server for 8 players. **Automatically starts when a player connects, shuts down after 3 minutes of inactivity.** You only pay when people are actually playing.
 
 **Estimated cost: ~$11–26/month** depending on how many hours per day the server runs.
 
@@ -19,8 +19,8 @@ Watcher machine (always on, ~$3.4/mo)
         │
         ▼
 Minecraft server (starts/stops on demand)
-  - Shuts itself down after 15 min with 0 players
-  - Backs up world to S3 every 6 hours
+  - Shuts itself down after 3 min with 0 players
+  - Backs up world to S3 every 1 hour + on boot/shutdown
 ```
 
 For full architecture details, see [docs/overview.md](docs/overview.md).
@@ -86,9 +86,9 @@ AWS sends a confirmation email to your `alert_email`. **Click the link in that e
 
 Terraform sets up the infrastructure automatically. The following steps must be done **once manually via SSH**.
 
-### Wait for boot (~5–8 minutes)
+### Wait for boot (~3–5 minutes)
 
-The Minecraft server runs a setup script on first boot. Wait for it to finish:
+The Minecraft server runs a setup script on first boot (installs Java, AWS CLI, mcrcon, and cron scripts). It does NOT install PaperMC or create a minecraft.service — those are handled by Pterodactyl. Wait for it to finish:
 
 ```bash
 ssh -i your-key.pem ubuntu@<mc_server_public_ip>
@@ -119,6 +119,17 @@ After it finishes, follow the printed instructions to connect Wings to the Panel
 
 **Panel URL:** `http://<mc_server_public_ip>:8080`
 > The Panel is only accessible while the MC server EC2 is running.
+
+### Create MC Server in Pterodactyl Panel
+
+After Wings is connected, create your MC server through the Panel GUI:
+1. Admin → Servers → Create New (Egg: Paper, Java 21)
+2. Set resources: Memory 12288 MB, Disk 20000 MB
+3. Accept EULA in Files tab, configure server.properties
+4. Upload Chunky plugin to plugins/ folder
+5. Start the server
+
+PaperMC, server.properties, eula.txt, and plugins are all managed through the Pterodactyl Panel GUI.
 
 ---
 
@@ -162,7 +173,7 @@ This generates a 6000×6000 block area. Takes 20–40 minutes. Players can be on
 | Manual backup | `sudo bash /usr/local/bin/mc-backup.sh` |
 | Restore from backup | `sudo bash mc_restore.sh` (copy from `scripts/`) |
 | Update PaperMC | `sudo bash mc_update_paper.sh` (copy from `scripts/`) |
-| View live server log | `sudo journalctl -u minecraft -f` |
+| View live server log | Pterodactyl Console tab, or `sudo docker logs $(sudo docker ps -q) -f` |
 | View auto-stop log | `tail -f /var/log/mc-autostop.log` |
 
 All scripts and their full documentation are in [docs/scripts.md](docs/scripts.md).

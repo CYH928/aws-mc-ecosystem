@@ -70,7 +70,7 @@ It then restarts Panel/Wings services and auto-starts all Pterodactyl servers. T
 
 ## Starting / Stopping the MC Server Manually
 
-The server auto-starts when a player connects and auto-stops after 15 min of inactivity. The **MC Web Control Panel** (above) is the recommended way for manual control. For CLI alternatives:
+The server auto-starts when a player connects and auto-stops after 3 min of inactivity. The **MC Web Control Panel** (above) is the recommended way for manual control. For CLI alternatives:
 
 **Start manually:**
 ```bash
@@ -87,7 +87,8 @@ aws ec2 start-instances \
 **Stop manually (emergency):**
 ```bash
 # SSH into MC server, then:
-sudo systemctl stop minecraft
+# Stop all Pterodactyl Docker containers first
+sudo docker stop $(sudo docker ps -q) 2>/dev/null
 sudo /usr/local/bin/aws ec2 stop-instances \
   --region ap-east-1 \
   --instance-ids $(curl -s http://169.254.169.254/latest/meta-data/instance-id)
@@ -121,17 +122,19 @@ Exit RCON: `Ctrl+C`
 ## Viewing Server Logs
 
 ```bash
-# Live log stream
-sudo journalctl -u minecraft -f
+# MC server logs (Pterodactyl Docker containers)
+sudo docker logs $(sudo docker ps -q) -f --tail 100
 
-# Last 100 lines
-sudo journalctl -u minecraft -n 100
+# Or use Pterodactyl Panel Console tab (recommended — no SSH needed)
 
 # Auto-stop log
 tail -f /var/log/mc-autostop.log
 
 # Backup log
 tail -f /var/log/mc-backup.log
+
+# Wings log (Pterodactyl game server daemon)
+sudo journalctl -u wings -f
 
 # mc-proxy log (on Watcher)
 sudo journalctl -u mc-proxy -f
@@ -142,7 +145,7 @@ sudo journalctl -u mc-proxy -f
 ## Backups
 
 ### Automatic Backups
-Backups run every 6 hours automatically. Files are stored in S3 as:
+Backups run every 1 hour automatically, plus on every boot (via `fix-panel-ip.sh`) and before shutdown (via MC Web Control Panel). Files are stored in S3 as:
 ```
 s3://YOUR_BUCKET/backups/mc-backup-YYYYMMDD-HHMM.tar.gz
 ```
@@ -196,25 +199,22 @@ The script warns players 30 seconds before restarting.
 
 ## Adding / Updating Plugins
 
+Use the Pterodactyl Panel GUI (recommended):
+1. Go to your server page → **Files** tab
+2. Navigate to `plugins/` folder
+3. Upload the plugin `.jar` file
+4. **Restart** the server from the Console tab
+
+Or via RCON (if plugin supports hot-reload):
 ```bash
-# SSH into MC server
-cd /home/minecraft/server/plugins
-
-# Download plugin jar
-wget https://example.com/plugin.jar
-
-# Reload plugins without full restart (if plugin supports it):
 mcrcon -H localhost -P 25575 -p YOUR_RCON_PASSWORD "reload confirm"
-
-# Or restart the server:
-sudo systemctl restart minecraft
 ```
 
 ---
 
 ## Adjusting Auto-Stop Timer
 
-Default: shuts down after 15 minutes of 0 players (3 checks × 5 min).
+Default: shuts down after 3 minutes of 0 players (3 checks × 1 min).
 
 To change to 30 minutes (6 checks):
 ```bash
@@ -228,15 +228,13 @@ sudo nano /usr/local/bin/mc-autostop.sh
 
 ## Adjusting Server RAM
 
-Default: `-Xmx12G -Xms4G` (on t3.xlarge with 16 GB RAM).
+Default: 12 GB (on t3.xlarge with 16 GB RAM).
 
 To change:
-```bash
-sudo nano /etc/systemd/system/minecraft.service
-# Edit the ExecStart line
-sudo systemctl daemon-reload
-sudo systemctl restart minecraft
-```
+1. Log into Pterodactyl Panel → Admin area
+2. Go to **Servers** → select your server
+3. Under **Build Configuration**, change **Memory** (in MB)
+4. Save and restart the server from the Console tab
 
 ---
 

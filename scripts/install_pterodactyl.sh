@@ -11,7 +11,6 @@ PANEL_USER="admin"
 PANEL_EMAIL="admin@example.com"
 PANEL_PASSWORD="changeme123"          # Change this!
 DB_PASSWORD=$(openssl rand -hex 16)   # Auto-generated
-MC_DIR=/home/minecraft/server
 
 # ── Detect public IP for Panel URL ────────────────────────────────────────
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)

@@ -2,6 +2,8 @@
 
 本文教你點樣用 Pterodactyl Panel 管理 Minecraft 伺服器，包括建立新世界、安裝模組、切換伺服器等。
 
+> **重要：** Pterodactyl 係管理 Minecraft 伺服器嘅**唯一方法**。所有 MC 伺服器進程都由 Pterodactyl Wings 喺 Docker 容器入面管理，系統無 `minecraft.service`。世界資料存放喺 `/var/lib/pterodactyl/volumes/<uuid>/world/`。所有伺服器操作（啟動、停止、設定、插件、檔案管理）都必須透過 Pterodactyl Panel GUI 或者 RCON 進行。
+
 ---
 
 ## 登入 Panel
@@ -201,7 +203,7 @@ Server 建立後第一次啟動會失敗，因為 Minecraft 要求接受 EULA：
 
 ### 用 S3 自動備份（已設定）
 
-系統每 6 小時自動備份世界到 S3。呢個只適用於第一個 Survival World。
+系統每 1 小時自動備份世界到 S3，另外每次開機（`fix-panel-ip.sh`）同關機（MC Web Control Panel）都會觸發備份。備份腳本會自動搵 Pterodactyl volumes 入面嘅世界資料。
 
 新建嘅伺服器建議用 Panel 內建嘅 Backup 功能。
 
